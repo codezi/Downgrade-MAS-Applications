@@ -1,89 +1,100 @@
 /**
- * This Frida script disables SSL pinning and verification on any target macOS Catalina process.
+ * This Frida script disables SSL pinning and verification on any target macOS process.
+ * Updated for Frida 17+ (2025)
+ * Original source:
  * https://gist.github.com/azenla/37f941de24c5dfe46f3b8e93d94ce909
- * (c) azenla, 2019
- * Used for this repo: https://github.com/trungnghiatn/Downgrade-MAS-Applications
+ * Used for: https://github.com/trungnghiatn/Downgrade-MAS-Applications
  */
 
-var SecurityModule = Process.getModuleByName('Security');
-var libboringsslModule = Process.getModuleByName('libboringssl.dylib');
+const SecurityModule = Process.getModuleByName('Security');
+const libboringsslModule = Process.getModuleByName('libboringssl.dylib');
 
-var SecTrustEvaluate_handle =
-    SecurityModule.getExportByName('SecTrustEvaluate');
-var SecTrustEvaluateWithError_handle =
-    SecurityModule.getExportByName('SecTrustEvaluateWithError');
-var SSL_CTX_set_custom_verify_handle =
-    libboringsslModule.getExportByName('SSL_CTX_set_custom_verify');
-var SSL_get_psk_identity_handle =
-    libboringsslModule.getExportByName('SSL_get_psk_identity');
-var boringssl_context_set_verify_mode_handle = 
-    libboringsslModule.getExportByName('boringssl_context_set_verify_mode');
+// === Exported handles ===
+const SecTrustEvaluate_handle = SecurityModule.getExportByName('SecTrustEvaluate');
+const SecTrustEvaluateWithError_handle = SecurityModule.getExportByName('SecTrustEvaluateWithError');
+const SSL_CTX_set_custom_verify_handle = libboringsslModule.getExportByName('SSL_CTX_set_custom_verify');
+const SSL_get_psk_identity_handle = libboringsslModule.getExportByName('SSL_get_psk_identity');
+const boringssl_context_set_verify_mode_handle = libboringsslModule.getExportByName('boringssl_context_set_verify_mode');
 
+// === Hook SecTrustEvaluateWithError() ===
 if (SecTrustEvaluateWithError_handle) {
-  var SecTrustEvaluateWithError = new NativeFunction(
+  const SecTrustEvaluateWithError = new NativeFunction(
       SecTrustEvaluateWithError_handle, 'int', ['pointer', 'pointer']);
 
   Interceptor.replace(
       SecTrustEvaluateWithError_handle,
-      new NativeCallback(function(trust, error) {
+      new NativeCallback(function (trust, error) {
         console.log('[*] Called SecTrustEvaluateWithError()');
         SecTrustEvaluateWithError(trust, NULL);
-        Memory.writeU8(error, 0);
-        return 1;
-      }, 'int', ['pointer', 'pointer']));
+        ptr(error).writeU8(0); // ✅ updated for Frida 17
+        return 1; // means trusted
+      }, 'int', ['pointer', 'pointer'])
+  );
   console.log('[+] SecTrustEvaluateWithError() hook installed.');
 }
 
+// === Hook SecTrustEvaluate() ===
 if (SecTrustEvaluate_handle) {
-  var SecTrustEvaluate = new NativeFunction(
+  const SecTrustEvaluate = new NativeFunction(
       SecTrustEvaluate_handle, 'int', ['pointer', 'pointer']);
 
   Interceptor.replace(
-      SecTrustEvaluate_handle, new NativeCallback(function(trust, result) {
+      SecTrustEvaluate_handle,
+      new NativeCallback(function (trust, result) {
         console.log('[*] Called SecTrustEvaluate()');
         SecTrustEvaluate(trust, result);
-        Memory.writeU8(result, 1);
-        return 0;
-      }, 'int', ['pointer', 'pointer']));
+        ptr(result).writeU8(1); // ✅ trusted
+        return 0; // noErr
+      }, 'int', ['pointer', 'pointer'])
+  );
   console.log('[+] SecTrustEvaluate() hook installed.');
 }
 
+// === Hook SSL_CTX_set_custom_verify() ===
 if (SSL_CTX_set_custom_verify_handle) {
-  var SSL_CTX_set_custom_verify = new NativeFunction(
+  const SSL_CTX_set_custom_verify = new NativeFunction(
       SSL_CTX_set_custom_verify_handle, 'void', ['pointer', 'int', 'pointer']);
 
-  var replaced_callback = new NativeCallback(function(ssl, out) {
-    console.log('[*] Called custom SSL verifier')
-    return 0;
+  const replaced_callback = new NativeCallback(function (ssl, out) {
+    console.log('[*] Called custom SSL verifier');
+    return 0; // accepted
   }, 'int', ['pointer', 'pointer']);
 
   Interceptor.replace(
       SSL_CTX_set_custom_verify_handle,
-      new NativeCallback(function(ctx, mode, callback) {
+      new NativeCallback(function (ctx, mode, callback) {
         console.log('[*] Called SSL_CTX_set_custom_verify()');
         SSL_CTX_set_custom_verify(ctx, 0, replaced_callback);
-      }, 'int', ['pointer', 'int', 'pointer']));
-  console.log('[+] SSL_CTX_set_custom_verify() hook installed.')
+      }, 'void', ['pointer', 'int', 'pointer'])
+  );
+  console.log('[+] SSL_CTX_set_custom_verify() hook installed.');
 }
 
+// === Hook SSL_get_psk_identity() ===
 if (SSL_get_psk_identity_handle) {
   Interceptor.replace(
-      SSL_get_psk_identity_handle, new NativeCallback(function(ssl) {
+      SSL_get_psk_identity_handle,
+      new NativeCallback(function (ssl) {
         console.log('[*] Called SSL_get_psk_identity_handle()');
-        return 'notarealPSKidentity';
-      }, 'pointer', ['pointer']));
-  console.log('[+] SSL_get_psk_identity() hook installed.')
+        return Memory.allocUtf8String('notarealPSKidentity'); // ✅ fixed return type
+      }, 'pointer', ['pointer'])
+  );
+  console.log('[+] SSL_get_psk_identity() hook installed.');
 }
 
+// === Hook boringssl_context_set_verify_mode() ===
 if (boringssl_context_set_verify_mode_handle) {
-  var boringssl_context_set_verify_mode = new NativeFunction(
+  const boringssl_context_set_verify_mode = new NativeFunction(
       boringssl_context_set_verify_mode_handle, 'int', ['pointer', 'pointer']);
 
   Interceptor.replace(
       boringssl_context_set_verify_mode_handle,
-      new NativeCallback(function(a, b) {
+      new NativeCallback(function (a, b) {
         console.log('[*] Called boringssl_context_set_verify_mode()');
         return 0;
-      }, 'int', ['pointer', 'pointer']));
-  console.log('[+] boringssl_context_set_verify_mode() hook installed.')
+      }, 'int', ['pointer', 'pointer'])
+  );
+  console.log('[+] boringssl_context_set_verify_mode() hook installed.');
 }
+
+console.log('✅ SSL pinning bypass hooks loaded successfully for Frida 17+.');

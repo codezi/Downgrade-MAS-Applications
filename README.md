@@ -7,7 +7,7 @@ This guide provides instructions on how to downgrade a specific application from
 Before you begin, make sure you meet the following requirements:
 
 - You have already purchased the target application on the MAS.
-- You have the `disable-ssl-pinning.js` script, which can be downloaded [here](https://raw.githubusercontent.com/trungnghiatn/Downgrade-MAS-Applications/master/Scripts/disable-ssl-pinning.js).
+- You have the `disable-ssl-pinning.js` script, which can be downloaded [here](https://github.com/codezi/Downgrade-MAS-Applications/blob/main/Scripts/disable-ssl-pinning.js)
 - System Integrity Protection (SIP) is disabled on your Mac. For a detailed instruction on how to disable System Integrity Protection (SIP) on your Mac, you can refer to [this link](https://support.intego.com/hc/en-us/articles/115003523252-How-to-Disable-System-Integrity-Protection-SIP-). Remember to turn SIP back on after you have finished downgrading the app.
 - Frida tools are installed. You can install them by running either of the following commands in the terminal:
   ```
